@@ -1,9 +1,23 @@
 // lib/resume/json-parser.ts
 import { ResumeData } from '../../types/resume';
 
+function normalizeResumeData(data: ResumeData): ResumeData {
+  return {
+    ...data,
+    experience: data.experience.map((job) => ({
+      ...job,
+      details: Array.isArray(job.details) ? job.details : [],
+    })),
+    education: data.education.map((edu) => ({
+      ...edu,
+      details: edu.details ?? '',
+    })),
+  };
+}
+
 export function parseTailoredResumeToJSON(tailoredResumeText: string): ResumeData {
   const resumeData: ResumeData = {
-    personal: { name: '', email: '' },
+    personal: { name: '', email: '', linkedin: '' },
     summary: '',
     skills: { programmingLanguages: [], frameworksTools: [], practicesMethods: [] },
     experience: [],
@@ -135,13 +149,17 @@ export function parseTailoredResumeToJSON(tailoredResumeText: string): ResumeDat
           currentJob = {
             company: companyPart.replace(/\s+$/, ''),
             title: '',
+            institution: '',
             dates: dates,
-            achievements: [],
+            details: [],
           };
-        } else if (currentJob && !currentJob.title && line.length > 0 && line.length < 100 && !line.startsWith('•') && !line.startsWith('-')) {
+        } else if (currentJob && !currentJob.title && line.length > 0 && line.length < 100 && !line.startsWith('•') && !line.startsWith('-') && !line.startsWith('*')) {
           currentJob.title = line;
-        } else if ((line.startsWith('•') || line.startsWith('-') || line.match(/^\d+\./)) && currentJob) {
-          currentJob.achievements.push(line.replace(/^[•\-\d\.]\s*/, ''));
+        } else if (line.startsWith('•') || line.startsWith('-') || line.startsWith('*') || line.match(/^\d+\./)) {
+          if (!currentJob) {
+            currentJob = { company: 'Experience', title: '', institution: '', dates: '', details: [] };
+          }
+          currentJob.details.push(line.replace(/^[•\-\*\d\.]\s*/, ''));
         }
         break;
         
@@ -190,18 +208,20 @@ export function parseTailoredResumeToJSON(tailoredResumeText: string): ResumeDat
     resumeData.experience.push({
       company: 'Work Experience',
       title: '',
+      institution: '',
       dates: '',
-      achievements: ['Add your experience here'],
+      details: ['Add your experience here'],
     });
   }
   
   if (resumeData.education.length === 0) {
     resumeData.education.push({
-      degree: 'Education',
-      institution: '',
-      dates: '',
+        degree: 'Education',
+        institution: '',
+        dates: '',
+        details: ''
     });
   }
   
-  return resumeData;
+  return normalizeResumeData(resumeData);
 }

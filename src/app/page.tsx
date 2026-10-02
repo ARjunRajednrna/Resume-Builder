@@ -1,18 +1,13 @@
 'use client';
 import { useState } from 'react';
-import { Upload, FileText, Sparkles } from 'lucide-react';
+import { Upload, FileText, Sparkles, Download } from 'lucide-react';
 
 export default function Home() {
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [jobDescription, setJobDescription] = useState('');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState('');
   const [error, setError] = useState('');
-  const [meta, setMeta] = useState<{
-    matchScore?: { before: number; after: number };
-    missingKeywords?: string[];
-    jdTitle?: string;
-  } | null>(null);
+  const [success, setSuccess] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,8 +15,7 @@ export default function Home() {
 
     setLoading(true);
     setError('');
-    setMeta(null);
-    setResult('');
+    setSuccess(false);
 
     const formData = new FormData();
     formData.append('resume', resumeFile);
@@ -33,17 +27,29 @@ export default function Home() {
         body: formData,
       });
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        setError(data.error ?? 'Failed to tailor resume');
-        return;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to tailor resume');
       }
 
-      setResult(data.tailoredResume);
-      setMeta(data.meta ?? null);
-    } catch {
-      setError('Network error. Please try again.');
+      // Get PDF blob and download
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `tailored-resume-${Date.now()}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      setSuccess(true);
+      
+      // Reset success message after 3 seconds
+      setTimeout(() => setSuccess(false), 3000);
+      
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -80,7 +86,7 @@ export default function Home() {
                 <p className="text-lg font-medium text-gray-700">
                   {resumeFile ? resumeFile.name : "Drag & drop your resume here"}
                 </p>
-                <p className="text-sm text-gray-500 mt-1">or click to browse (PDF only)</p>
+                <p className="text-sm text-gray-500 mt-1">or click to browse (PDF only, max 5MB)</p>
                 <input
                   type="file"
                   accept=".pdf"
@@ -103,93 +109,58 @@ export default function Home() {
                 Job Description
               </label>
               <textarea
-                placeholder="Paste the job description here..."
+                placeholder="Paste the job description here (minimum 50 characters)..."
                 value={jobDescription}
                 onChange={(e) => setJobDescription(e.target.value)}
                 rows={10}
                 className="w-full px-5 py-4 border border-gray-200 rounded-2xl focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-y min-h-[180px] text-gray-700"
               />
+              <p className="mt-2 text-sm text-gray-500">
+                {jobDescription.length} characters
+              </p>
             </div>
 
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={loading || !resumeFile || !jobDescription}
+              disabled={loading || !resumeFile || !jobDescription || jobDescription.length < 50}
               className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-4 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
             >
               {loading ? (
                 <>
                   <div className="w-5 h-5 border-2 border-white border-t-transparent animate-spin rounded-full" />
-                  Analyzing JD & tailoring (may take 30–60s)...
+                  Analyzing & Tailoring Your Resume (30-60s)...
                 </>
               ) : (
                 <>
                   <Sparkles className="w-5 h-5" />
-                  Generate Tailored Resume
+                  Generate & Download Tailored Resume
                 </>
               )}
             </button>
           </form>
 
           {error && (
-            <p className="mt-4 text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
-              {error}
-            </p>
+            <div className="mt-4 p-4 bg-red-50 border border-red-100 rounded-xl">
+              <p className="text-sm text-red-600">{error}</p>
+            </div>
+          )}
+          
+          {success && (
+            <div className="mt-4 p-4 bg-green-50 border border-green-100 rounded-xl">
+              <p className="text-sm text-green-700 flex items-center gap-2">
+                <Download className="w-4 h-4" />
+                PDF downloaded successfully! Check your Downloads folder.
+              </p>
+            </div>
           )}
         </div>
 
-        {/* Results Section */}
-        {result && (
-          <div className="mt-12 bg-white rounded-3xl shadow-xl p-10 border border-gray-100">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-semibold text-gray-900 flex items-center gap-3">
-                <Sparkles className="w-6 h-6 text-blue-600" />
-                Your Tailored Resume
-              </h2>
-              <button
-                type="button"
-                onClick={() => {
-                  setResult('');
-                  setMeta(null);
-                  setError('');
-                }}
-                className="text-sm text-gray-500 hover:text-gray-700"
-              >
-                Clear
-              </button>
-            </div>
-
-            {meta?.matchScore && (
-              <div className="mb-6 flex flex-wrap gap-3">
-                <span className="inline-flex items-center rounded-full bg-gray-100 px-4 py-1.5 text-sm font-medium text-gray-700">
-                  Before: {meta.matchScore.before}%
-                </span>
-                <span className="inline-flex items-center rounded-full bg-green-100 px-4 py-1.5 text-sm font-medium text-green-800">
-                  After: {meta.matchScore.after}%
-                </span>
-                {meta.jdTitle && (
-                  <span className="inline-flex items-center rounded-full bg-blue-100 px-4 py-1.5 text-sm font-medium text-blue-800">
-                    Role: {meta.jdTitle}
-                  </span>
-                )}
-              </div>
-            )}
-
-            {meta?.missingKeywords && meta.missingKeywords.length > 0 && (
-              <p className="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
-                Still missing (may need real experience):{' '}
-                {meta.missingKeywords.slice(0, 8).join(', ')}
-                {meta.missingKeywords.length > 8 ? '…' : ''}
-              </p>
-            )}
-
-            <div className="bg-gray-50 border border-gray-100 rounded-2xl p-8">
-              <pre className="whitespace-pre-wrap font-sans text-gray-700 leading-relaxed text-[15px]">
-                {result}
-              </pre>
-            </div>
-          </div>
-        )}
+        {/* Info Section */}
+        <div className="mt-8 text-center text-sm text-gray-500">
+          <p>Your resume is extracted, tailored for the job, and rendered into a clean ATS-friendly template.</p>
+          <p className="mt-1">Name, contact info, dates, education, and certifications are preserved — only wording is optimized.</p>
+        </div>
       </div>
     </main>
   );
